@@ -12,26 +12,19 @@ NAME = "cug541"
 
 class ChatServer(dispatcher):
 
-    def __init__(self, port):
+    def __init__(self, port, name):
         dispatcher.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         self.set_reuse_addr()
         self.bind(('', port))
         self.listen(5)
-        self.sessions = []
-        print "listen on port {}...".format(port)
+        self.name = name
+        self.users = {}
+        self.main_room = ChatRoom(self)
 
     def handle_accept(self):
         conn, addr = self.accept()
-        self.sessions.append(ChatSession(conn, self))
-        print "connection from {}".format(addr[0])
-
-    def disconnect(self, session):
-        self.sessions.remove(session)
-
-    def broadcast(self, line):
-        for session in self.sessions:
-            session.push(line + '\r\n')
+        ChatSession(conn, self)
 
 
 class ChatSession(async_chat):
@@ -41,6 +34,8 @@ class ChatSession(async_chat):
         self.server = server
         self.set_terminator("\r\n")
         self.data = []
+        self.name = None
+        self.enter(LoginRoom)
         self.push("welcome to {}\r\n".format(NAME))
 
     def collect_incoming_data(self, data):
@@ -49,12 +44,24 @@ class ChatSession(async_chat):
     def found_terminator(self):
         line = ''.join(self.data)
         self.data = []
-        self.server.broadcast(line)
-        print line
+        try:
+            self.room.handle(self, line)
+        except EndSession:
+            self.handle_close()
 
     def handle_close(self):
         async_chat.handle_close(self)
-        self.server.disconnect(self)
+        self.enter(LogoutRoom(self.server))
+
+    def enter(self, room):
+        try:
+            cur = self.room
+        except AttributeError:
+            pass
+        else:
+            cur.remove(self)
+        self.room = room
+        room.add(self)
 
 
 class CommandHandler:
@@ -89,7 +96,7 @@ class Room(CommandHandler):
     def remove(self, session):
         self.sessions.remove(session)
 
-    def broadcase(self, line):
+    def broadcast(self, line):
         for session in self.sessions:
             session.push(line)
 
@@ -101,6 +108,62 @@ class EndSession(Exception):
     pass
 
 
+class LoginRoom(Room):
+    """
+    为刚连接的用户准备的房间
+    """
+    def add(self, session):
+        Room.add(self, session)
+        self.broadcast('Welcome to {} \r\n'.format(self.server.name))
+
+    def unknow(self, session, cmd):
+        session.push('Please log in \nUse "login <nick>"\r\n')
+
+    def do_login(self, session, line):
+        name = line.strip()
+        if not name:
+            session.push('Please enter a name\r\n')
+        elif name in self.server.users:
+            session.push('The name "{}" is taken.\r\n'.format(name))
+            session.push('Please try again.\r\n')
+        else:
+            session.name = name
+            session.enter(self.server.main_room)
+
+
+class ChatRoom(Room):
+
+    def add(self, session):
+        self.broadcast(session.name + ' has entered the room.\r\n')
+        self.server.users['session.name'] = session
+        Room.add(self, session)
+
+    def remove(self, session):
+        Room.remove(self, session)
+        self.broadcast(session.name + ' has left the room.\r\n')
+    def do_say(self, session, line):
+        self.broadcast(session.name + ' has left the room.\r\n')
+
+    def do_look(self, session, line):
+        session.push('The following are in this room:\r\n')
+        for other in self.sessions:
+            session.push(other.name + '\r\n')
+
+    def do_who(self, session, line):
+        session.push('The following are logged in"\r\n')
+        for name in self.server.users:
+            session.push(name + '\r\n')
+
+
+class LogoutRoom(Room):
+
+    def add (self, session):
+        try:
+            del self.server.users[session.name]
+        except KeyError:
+            pass
+
+
 if __name__ == '__main__':
-    s = ChatServer(5005)
+    s = ChatServer(5005, NAME)
     asyncore.loop()
