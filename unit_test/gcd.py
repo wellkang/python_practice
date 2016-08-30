@@ -2,19 +2,26 @@
 
 """
 """
+def get_num(start, num, step):
+    n = start
+    while n < num:
+        yield n
+        n += step
+
+def get_largest_prime_factor(min_factor, num):
+    if min_factor == 2:
+        if num % 2 == 0:
+            if num == 2:
+                return 2
+            else:
+                return get_largest_prime_factor(2, num/2)
+        else:
+            return get_largest_prime_factor(3, num)
+    for i in get_num(min_factor, num / 2 + 1, 2):
+        if num % i == 0:
+            return get_largest_prime_factor(i, num / i)
+    return num
 
 
-class GCD:
-
-    def __init__(self):
-        pass
-
-    def gcd(self, num1, num2):
-        min = (num1 < num2) and num1 or num2
-        gcd_num = 1
-        for i in range(1, min+1):
-            a = num1 % i
-            b = num2 % i
-            if a == 0 and b == 0:
-                gcd_num = i
-        return gcd_num
+if __name__ == '__main__':\
+    print get_largest_prime_factor(2, 600851475143)
