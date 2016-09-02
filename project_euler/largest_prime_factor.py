@@ -2,11 +2,14 @@
 
 """
 """
+
+
 def get_num(start, num, step):
     n = start
     while n < num:
         yield n
         n += step
+
 
 def get_largest_prime_factor(min_factor, num):
     if min_factor == 2:
